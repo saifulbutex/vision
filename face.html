@@ -35,4 +35,52 @@
 
       // Draw bounding boxes
       if (results.detections) {
-        results.detections.forEach(detec
+        results.detections.forEach(detection => {
+          const box = detection.boundingBox;
+          ctx.strokeStyle = 'lime';
+          ctx.lineWidth = 4;
+          ctx.strokeRect(
+            box.xCenter - box.width / 2,
+            box.yCenter - box.height / 2,
+            box.width,
+            box.height
+          );
+        });
+      }
+    });
+
+    // Start camera once video metadata is loaded
+    video.addEventListener('loadedmetadata', () => {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+
+      const camera = new Camera(video, {
+        onFrame: async () => await faceDetection.send({ image: video }),
+        width: video.videoWidth,
+        height: video.videoHeight
+      });
+      camera.start();
+    });
+  </script>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                   
