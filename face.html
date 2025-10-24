@@ -2,58 +2,52 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Moving Circle</title>
+  <title>Real-time Face Detection</title>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
   <style>
-    body { margin: 0; overflow: hidden; background: #222; }
-    canvas { display: block; background: #222; }
+    body { margin: 0; overflow: hidden; background: #000; display: flex; justify-content: center; }
+    video, canvas { position: absolute; width: 100vw; height: 100vh; object-fit: cover; }
   </style>
 </head>
 <body>
-  <canvas id="myCanvas"></canvas>
+  <video class="input_video" autoplay muted playsinline></video>
+  <canvas class="output_canvas"></canvas>
 
   <script>
-    const canvas = document.getElementById('myCanvas');
-    const ctx = canvas.getContext('2d');
+    const videoElement = document.querySelector('.input_video');
+    const canvasElement = document.querySelector('.output_canvas');
+    const canvasCtx = canvasElement.getContext('2d');
 
-    // Set canvas to full window size
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-
-    let x = 100;          // starting x position
-    let y = canvas.height / 2; // vertical center
-    let radius = 50;
-    let speed = 5;        // pixels per frame
-    let direction = 1;    // 1 = right, -1 = left
-
-    function animate() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height); // clear canvas
-
-      // Draw circle
-      ctx.beginPath();
-      ctx.arc(x, y, radius, 0, Math.PI * 2);
-      ctx.fillStyle = 'lime';
-      ctx.fill();
-      ctx.closePath();
-
-      // Update position
-      x += speed * direction;
-
-      // Bounce off edges
-      if (x + radius > canvas.width || x - radius < 0) {
-        direction *= -1;
-      }
-
-      requestAnimationFrame(animate); // loop
-    }
-
-    animate();
-
-    // Adjust canvas size if window resizes
-    window.addEventListener('resize', () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-      y = canvas.height / 2;
+    const faceDetection = new FaceDetection.FaceDetection({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`
     });
+    faceDetection.setOptions({
+      model: 'short', // lightweight model for mobile
+      minDetectionConfidence: 0.5
+    });
+
+    faceDetection.onResults((results) => {
+      canvasCtx.save();
+      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+      canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+      if (results.detections.length > 0) {
+        results.detections.forEach(detection => {
+          const box = detection.boundingBox;
+          canvasCtx.strokeStyle = 'lime';
+          canvasCtx.lineWidth = 4;
+          canvasCtx.strokeRect(box.xCenter - box.width / 2, box.yCenter - box.height / 2, box.width, box.height);
+        });
+      }
+      canvasCtx.restore();
+    });
+
+    const camera = new CameraUtils.Camera(videoElement, {
+      onFrame: async () => { await faceDetection.send({ image: videoElement }); },
+      width: 640,
+      height: 480
+    });
+    camera.start();
   </script>
 </body>
 </html>
