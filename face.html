@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Live Face Detection</title>
+  <title>Live Face Detection (GitHub Ready)</title>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
   <style>
@@ -25,43 +25,14 @@
     });
 
     faceDetection.setOptions({
-      model: 'short',  // lightweight model for real-time
+      model: 'short',           // lightweight for real-time
       minDetectionConfidence: 0.5
     });
 
     faceDetection.onResults(results => {
-      // Draw video frame first
+      // Draw video frame
       ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
 
-      // Draw bounding boxes for detected faces
+      // Draw bounding boxes
       if (results.detections) {
-        results.detections.forEach(detection => {
-          const box = detection.boundingBox;
-          ctx.strokeStyle = 'lime';
-          ctx.lineWidth = 4;
-          ctx.strokeRect(
-            box.xCenter - box.width / 2,
-            box.yCenter - box.height / 2,
-            box.width,
-            box.height
-          );
-        });
-      }
-    });
-
-    // Wait for video to be ready
-    video.addEventListener('loadedmetadata', () => {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-
-      // Start camera
-      const camera = new Camera(video, {
-        onFrame: async () => await faceDetection.send({ image: video }),
-        width: video.videoWidth,
-        height: video.videoHeight
-      });
-      camera.start();
-    });
-  </script>
-</body>
-</html>
+        results.detections.forEach(detec
