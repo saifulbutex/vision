@@ -1,11 +1,59 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="UTF-8">
-    <title>HTML Test</title>
+  <meta charset="UTF-8">
+  <title>Moving Circle</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #222; }
+    canvas { display: block; background: #222; }
+  </style>
 </head>
 <body>
-    <h1>Hello, this is a test!</h1>
-    <p>If you see this text in your browser, your HTML file works.</p>
+  <canvas id="myCanvas"></canvas>
+
+  <script>
+    const canvas = document.getElementById('myCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // Set canvas to full window size
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    let x = 100;          // starting x position
+    let y = canvas.height / 2; // vertical center
+    let radius = 50;
+    let speed = 5;        // pixels per frame
+    let direction = 1;    // 1 = right, -1 = left
+
+    function animate() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height); // clear canvas
+
+      // Draw circle
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fillStyle = 'lime';
+      ctx.fill();
+      ctx.closePath();
+
+      // Update position
+      x += speed * direction;
+
+      // Bounce off edges
+      if (x + radius > canvas.width || x - radius < 0) {
+        direction *= -1;
+      }
+
+      requestAnimationFrame(animate); // loop
+    }
+
+    animate();
+
+    // Adjust canvas size if window resizes
+    window.addEventListener('resize', () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      y = canvas.height / 2;
+    });
+  </script>
 </body>
 </html>
