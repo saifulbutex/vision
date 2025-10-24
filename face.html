@@ -1,67 +1,11 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>Real-time Face Detection</title>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-  <style>
-    body { margin: 0; overflow: hidden; display: flex; justify-content: center; align-items: center; background: #000; }
-    video, canvas { position: absolute; width: 100%; height: 100%; object-fit: cover; }
-  </style>
-</head>
-<body>
-  <video id="video" autoplay muted playsinline></video>
-  <canvas id="canvas"></canvas>
+video.addEventListener('loadedmetadata', () => {
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
 
-  <script>
-    const video = document.getElementById('video');
-    const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d');
-
-    // Resize canvas to match video
-    function resizeCanvas() {
-      canvas.width = video.videoWidth || video.clientWidth;
-      canvas.height = video.videoHeight || video.clientHeight;
-    }
-
-    // Initialize Face Detection
-    const faceDetection = new FaceDetection.FaceDetection({
-      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`
-    });
-
-    faceDetection.setOptions({
-      model: 'short',             // lightweight model for real-time
-      minDetectionConfidence: 0.5
-    });
-
-    faceDetection.onResults(results => {
-      resizeCanvas();
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
-
-      if (results.detections) {
-        results.detections.forEach(detection => {
-          const box = detection.boundingBox;
-          ctx.strokeStyle = 'lime';
-          ctx.lineWidth = 4;
-          ctx.strokeRect(
-            box.xCenter - box.width / 2,
-            box.yCenter - box.height / 2,
-            box.width,
-            box.height
-          );
-        });
-      }
-    });
-
-    // Start camera
-    const camera = new Camera(video, {
-      onFrame: async () => await faceDetection.send({ image: video }),
-      width: 640,
-      height: 480
-    });
-    camera.start();
-  </script>
-</body>
-</html>
+  const camera = new Camera(video, {
+    onFrame: async () => await faceDetection.send({ image: video }),
+    width: video.videoWidth,
+    height: video.videoHeight
+  });
+  camera.start();
+});
