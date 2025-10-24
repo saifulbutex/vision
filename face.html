@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Fullscreen Face Detection</title>
+  <title>Fullscreen Face Detection Corrected</title>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface"></script>
   <style>
@@ -14,11 +14,7 @@
     }
     video, canvas {
       position: absolute;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100vh;
-      object-fit: cover;
+      object-fit: contain; /* preserve aspect ratio */
     }
   </style>
 </head>
@@ -37,6 +33,32 @@
       video.srcObject = stream;
       await new Promise(resolve => video.onloadedmetadata = () => resolve(video));
       video.play();
+      resizeCanvas();
+    }
+
+    function resizeCanvas() {
+      const videoAspect = video.videoWidth / video.videoHeight;
+      const windowAspect = window.innerWidth / window.innerHeight;
+      let width, height;
+
+      if (windowAspect > videoAspect) {
+        height = window.innerHeight;
+        width = height * videoAspect;
+      } else {
+        width = window.innerWidth;
+        height = width / videoAspect;
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+
+      canvas.style.left = `${(window.innerWidth - width) / 2}px`;
+      canvas.style.top = `${(window.innerHeight - height) / 2}px`;
+
+      video.style.width = `${width}px`;
+      video.style.height = `${height}px`;
+      video.style.left = canvas.style.left;
+      video.style.top = canvas.style.top;
     }
 
     async function detectFaces() {
@@ -61,16 +83,10 @@
     async function run() {
       await setupCamera();
       model = await blazeface.load();
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
       detectFaces();
     }
 
-    // Update canvas on window resize
-    window.addEventListener('resize', () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-    });
+    window.addEventListener('resize', resizeCanvas);
 
     run();
   </script>
