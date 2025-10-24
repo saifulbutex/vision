@@ -2,85 +2,52 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Live Face Detection (GitHub Ready)</title>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <title>Real-time Face Detection</title>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
   <style>
-    body { margin: 0; overflow: hidden; background: #000; display: flex; justify-content: center; align-items: center; }
-    video, canvas { position: absolute; width: 100%; height: 100%; object-fit: cover; }
+    body { margin: 0; overflow: hidden; background: #000; display: flex; justify-content: center; }
+    video, canvas { position: absolute; width: 100vw; height: 100vh; object-fit: cover; }
   </style>
 </head>
 <body>
-  <video id="video" autoplay muted playsinline></video>
-  <canvas id="canvas"></canvas>
+  <video class="input_video" autoplay muted playsinline></video>
+  <canvas class="output_canvas"></canvas>
 
   <script>
-    const video = document.getElementById('video');
-    const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d');
+    const videoElement = document.querySelector('.input_video');
+    const canvasElement = document.querySelector('.output_canvas');
+    const canvasCtx = canvasElement.getContext('2d');
 
-    // Initialize Face Detection
     const faceDetection = new FaceDetection.FaceDetection({
       locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`
     });
-
     faceDetection.setOptions({
-      model: 'short',           // lightweight for real-time
+      model: 'short', // lightweight model for mobile
       minDetectionConfidence: 0.5
     });
 
-    faceDetection.onResults(results => {
-      // Draw video frame
-      ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
-
-      // Draw bounding boxes
-      if (results.detections) {
+    faceDetection.onResults((results) => {
+      canvasCtx.save();
+      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+      canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+      if (results.detections.length > 0) {
         results.detections.forEach(detection => {
           const box = detection.boundingBox;
-          ctx.strokeStyle = 'lime';
-          ctx.lineWidth = 4;
-          ctx.strokeRect(
-            box.xCenter - box.width / 2,
-            box.yCenter - box.height / 2,
-            box.width,
-            box.height
-          );
+          canvasCtx.strokeStyle = 'lime';
+          canvasCtx.lineWidth = 4;
+          canvasCtx.strokeRect(box.xCenter - box.width / 2, box.yCenter - box.height / 2, box.width, box.height);
         });
       }
+      canvasCtx.restore();
     });
 
-    // Start camera once video metadata is loaded
-    video.addEventListener('loadedmetadata', () => {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-
-      const camera = new Camera(video, {
-        onFrame: async () => await faceDetection.send({ image: video }),
-        width: video.videoWidth,
-        height: video.videoHeight
-      });
-      camera.start();
+    const camera = new CameraUtils.Camera(videoElement, {
+      onFrame: async () => { await faceDetection.send({ image: videoElement }); },
+      width: 640,
+      height: 480
     });
+    camera.start();
   </script>
 </body>
 </html>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-                                   
