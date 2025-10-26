@@ -112,24 +112,26 @@ function startCalibration(){
 }
 
 async function startCamera(){
-  if(stream) return;
+  console.log("Start camera clicked");
   try{
     stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
     video.srcObject = stream;
     await video.play();
+    console.log("Camera started successfully");
     overlay.width = video.clientWidth;
     overlay.height = video.clientHeight;
-    // wait until OpenCV ready
     if(typeof cv === 'undefined'){
-      alert('OpenCV.js not loaded yet. Wait a few seconds and try Start again.');
+      console.error("OpenCV.js not loaded yet");
       return;
     }
     initMats();
     requestAnimationFrame(processFrame);
   } catch(err){
-    alert('Camera error: ' + err);
+    console.error("Camera error:", err);
+    alert('Camera error: ' + err.name + ' — ' + err.message);
   }
 }
+
 
 function initMats(){
   if(srcMat) srcMat.delete();
@@ -271,4 +273,5 @@ function processFrame(){
 </script>
 </body>
 </html>
+
 
