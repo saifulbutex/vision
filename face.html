@@ -1,94 +1,274 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Fullscreen Face Detection Corrected</title>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface"></script>
+  <meta charset="utf-8">
+  <title>Real-time Area Measurement (cm²)</title>
+  <script async src="https://docs.opencv.org/4.x/opencv.js" type="text/javascript"></script>
   <style>
-    body {
-      margin: 0;
-      overflow: hidden;
-      background: #000;
-    }
-    video, canvas {
-      position: absolute;
-      object-fit: contain; /* preserve aspect ratio */
-    }
+    body{ margin:0; background:#111; color:#ddd; font-family: Arial, sans-serif; }
+    #container{ display:flex; gap:12px; padding:12px; align-items:flex-start; }
+    #view{ position:relative; width:720px; height:540px; background:#000; }
+    video, canvas{ position:absolute; top:0; left:0; width:100%; height:100%; object-fit:cover; }
+    #controls{ min-width:300px; }
+    button{ margin:4px 0; width:100%; padding:8px; }
+    label{ display:block; margin-top:8px; font-size:13px; }
+    input[type=range]{ width:100%; }
+    #info{ margin-top:8px; font-size:14px; line-height:1.4; }
+    .hint{ color:#9f9; }
   </style>
 </head>
 <body>
-  <video id="video" autoplay muted playsinline></video>
-  <canvas id="canvas"></canvas>
+  <h2 style="margin:12px 12px 0 12px">Real-time Area Measurement (cm²)</h2>
+  <div id="container">
+    <div id="view">
+      <video id="video" autoplay playsinline></video>
+      <canvas id="overlay"></canvas>
+    </div>
 
-  <script>
-    const video = document.getElementById('video');
-    const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d');
-    let model;
+    <div id="controls">
+      <button id="btnStart">Start Camera</button>
+      <button id="btnCalib">Start Calibration (click two points)</button>
+      <label>Known distance (cm): <input id="knownDist" type="number" value="8.56" step="0.01"></label>
+      <label>Threshold: <input id="thresh" type="range" min="0" max="255" value="120"></label>
+      <label><input type="checkbox" id="autoThresh" checked> Auto-threshold (Otsu)</label>
+      <label><input type="checkbox" id="showContours" checked> Show contours</label>
+      <label><input type="checkbox" id="chooseLargest" checked> Pick largest contour only</label>
+      <div id="info">
+        <div><b>Calibration:</b> Click <span class="hint">Start Calibration</span>, then click two points on a known-length object in the video (e.g., card edge). Enter known distance in cm and click <b>Finish Calibration</b>.</div>
+        <div style="margin-top:8px"><b>Scale:</b> <span id="scaleInfo">Not calibrated</span></div>
+        <div style="margin-top:6px"><b>Measured area:</b> <span id="areaInfo">0 cm²</span></div>
+      </div>
+      <button id="resetCalib">Reset Calibration</button>
+    </div>
+  </div>
 
-    async function setupCamera() {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      video.srcObject = stream;
-      await new Promise(resolve => video.onloadedmetadata = () => resolve(video));
-      video.play();
-      resizeCanvas();
+<script>
+let video = document.getElementById('video');
+let overlay = document.getElementById('overlay');
+let ctx = overlay.getContext('2d');
+
+let stream = null;
+let srcMat = null, gray = null, blur = null, threshMat = null, hierarchy = null;
+let contours = new cv.MatVector();
+
+let pixelPerCm = null; // pixels per cm
+let calibMode = false;
+let calibPts = [];
+const overlayScale = 1; // we draw scaled to canvas size; conversions handle video dimensions
+
+const btnStart = document.getElementById('btnStart');
+const btnCalib = document.getElementById('btnCalib');
+const knownDistInput = document.getElementById('knownDist');
+const threshSlider = document.getElementById('thresh');
+const autoThreshCheck = document.getElementById('autoThresh');
+const showContoursCheck = document.getElementById('showContours');
+const chooseLargestCheck = document.getElementById('chooseLargest');
+const scaleInfo = document.getElementById('scaleInfo');
+const areaInfo = document.getElementById('areaInfo');
+const resetCalib = document.getElementById('resetCalib');
+
+btnStart.onclick = startCamera;
+btnCalib.onclick = startCalibration;
+resetCalib.onclick = () => { pixelPerCm = null; calibMode=false; calibPts=[]; scaleInfo.innerText='Not calibrated'; };
+
+overlay.addEventListener('click', onOverlayClick);
+
+function onOverlayClick(e){
+  if(!calibMode) return;
+  const r = overlay.getBoundingClientRect();
+  const x = (e.clientX - r.left);
+  const y = (e.clientY - r.top);
+  calibPts.push({x,y});
+  // draw temp point
+  ctx.fillStyle = 'yellow';
+  ctx.beginPath(); ctx.arc(x,y,6,0,Math.PI*2); ctx.fill();
+
+  if(calibPts.length === 2){
+    // ask user to confirm known distance
+    const known = parseFloat(knownDistInput.value);
+    if(!known || known <= 0){
+      alert('Enter a valid known distance (cm) before finishing calibration.');
+      calibPts = [];
+      return;
     }
+    // convert canvas coords to video pixel coords
+    const scaleX = video.videoWidth / overlay.width;
+    const scaleY = video.videoHeight / overlay.height;
+    const dx = (calibPts[0].x - calibPts[1].x) * scaleX;
+    const dy = (calibPts[0].y - calibPts[1].y) * scaleY;
+    const pixelDist = Math.hypot(dx, dy);
+    pixelPerCm = pixelDist / known;
+    scaleInfo.innerText = pixelPerCm.toFixed(3) + ' px/cm';
+    calibMode = false;
+    calibPts = [];
+    btnCalib.innerText = 'Start Calibration (click two points)';
+  }
+}
 
-    function resizeCanvas() {
-      const videoAspect = video.videoWidth / video.videoHeight;
-      const windowAspect = window.innerWidth / window.innerHeight;
-      let width, height;
+function startCalibration(){
+  calibMode = true;
+  calibPts = [];
+  btnCalib.innerText = 'Click two points on known object...';
+}
 
-      if (windowAspect > videoAspect) {
-        height = window.innerHeight;
-        width = height * videoAspect;
-      } else {
-        width = window.innerWidth;
-        height = width / videoAspect;
+async function startCamera(){
+  if(stream) return;
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+    video.srcObject = stream;
+    await video.play();
+    overlay.width = video.clientWidth;
+    overlay.height = video.clientHeight;
+    // wait until OpenCV ready
+    if(typeof cv === 'undefined'){
+      alert('OpenCV.js not loaded yet. Wait a few seconds and try Start again.');
+      return;
+    }
+    initMats();
+    requestAnimationFrame(processFrame);
+  } catch(err){
+    alert('Camera error: ' + err);
+  }
+}
+
+function initMats(){
+  if(srcMat) srcMat.delete();
+  srcMat = new cv.Mat(video.videoHeight, video.videoWidth, cv.CV_8UC4);
+  gray = new cv.Mat();
+  blur = new cv.Mat();
+  threshMat = new cv.Mat();
+  hierarchy = new cv.Mat();
+}
+
+function processFrame(){
+  if(!stream || video.readyState !== 4){
+    requestAnimationFrame(processFrame);
+    return;
+  }
+  // set overlay canvas size if changed
+  if(overlay.width !== video.clientWidth || overlay.height !== video.clientHeight){
+    overlay.width = video.clientWidth;
+    overlay.height = video.clientHeight;
+  }
+
+  // Read frame from video to srcMat
+  ctx.drawImage(video, 0, 0, overlay.width, overlay.height);
+  // Grab pixel data and convert to mat
+  let imageData = ctx.getImageData(0, 0, overlay.width, overlay.height);
+  // Convert imageData to Mat with correct size (video size)
+  if(srcMat.cols !== video.videoWidth || srcMat.rows !== video.videoHeight){
+    initMats();
+  }
+  // create temp canvas to get image at actual video resolution
+  let tmpCanvas = document.createElement('canvas');
+  tmpCanvas.width = video.videoWidth;
+  tmpCanvas.height = video.videoHeight;
+  let tmpCtx = tmpCanvas.getContext('2d');
+  tmpCtx.drawImage(video, 0, 0, tmpCanvas.width, tmpCanvas.height);
+  let tmpImg = tmpCtx.getImageData(0,0,tmpCanvas.width,tmpCanvas.height);
+  srcMat.data.set(tmpImg.data);
+
+  // Preprocessing: grayscale -> blur -> threshold
+  cv.cvtColor(srcMat, gray, cv.COLOR_RGBA2GRAY);
+  cv.GaussianBlur(gray, blur, new cv.Size(5,5), 0);
+
+  if(autoThreshCheck.checked){
+    // Otsu thresholding
+    cv.threshold(blur, threshMat, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU);
+  } else {
+    const t = parseInt(threshSlider.value);
+    cv.threshold(blur, threshMat, t, 255, cv.THRESH_BINARY);
+  }
+
+  // Morphological operations to clean
+  let M = cv.Mat.ones(5,5,cv.CV_8U);
+  cv.morphologyEx(threshMat, threshMat, cv.MORPH_CLOSE, M);
+  M.delete();
+
+  // Find contours
+  contours.delete(); contours = new cv.MatVector();
+  cv.findContours(threshMat, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+  // Choose contour(s)
+  let chosenContours = [];
+  for(let i=0;i<contours.size();i++){
+    let cnt = contours.get(i);
+    let area = cv.contourArea(cnt);
+    // filter noise by area (in pixels) - threshold relative to image size
+    if(area > (video.videoWidth * video.videoHeight) * 0.00005){ // adjustable
+      chosenContours.push({cnt, area});
+    } else {
+      cnt.delete();
+    }
+  }
+
+  // optionally pick largest
+  if(chosenContours.length > 1 && chooseLargestCheck.checked){
+    chosenContours.sort((a,b)=>b.area - a.area);
+    // keep only largest
+    const keep = chosenContours[0];
+    chosenContours.forEach((c, idx) => { if(idx!==0) c.cnt.delete(); });
+    chosenContours = [keep];
+  }
+
+  // Draw overlay on canvas scaled to display size
+  ctx.clearRect(0,0,overlay.width,overlay.height);
+  // draw the live video frame (already drawn earlier)
+  // ctx.drawImage(video, 0,0, overlay.width, overlay.height);
+
+  // draw threshold preview small (optional) - skip to focus on contour overlay
+
+  let totalAreaPx = 0;
+  if(showContoursCheck.checked){
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'lime';
+    ctx.fillStyle = 'rgba(0,255,0,0.15)';
+  }
+
+  for(let i=0;i<chosenContours.length;i++){
+    const cnt = chosenContours[i].cnt;
+    const area = chosenContours[i].area;
+    totalAreaPx += area;
+
+    // draw contour: convert contour points to display coordinates
+    let points = [];
+    for(let j=0;j<cnt.data32S.length/2;j++){
+      const x = cnt.data32S[j*2];
+      const y = cnt.data32S[j*2+1];
+      // scale to overlay display
+      const drawX = x * (overlay.width / video.videoWidth);
+      const drawY = y * (overlay.height / video.videoHeight);
+      points.push({x:drawX, y:drawY});
+    }
+    if(points.length){
+      ctx.beginPath();
+      ctx.moveTo(points[0].x, points[0].y);
+      for(let k=1;k<points.length;k++) ctx.lineTo(points[k].x, points[k].y);
+      ctx.closePath();
+      if(showContoursCheck.checked){
+        ctx.fill();
+        ctx.stroke();
       }
-
-      canvas.width = width;
-      canvas.height = height;
-
-      canvas.style.left = `${(window.innerWidth - width) / 2}px`;
-      canvas.style.top = `${(window.innerHeight - height) / 2}px`;
-
-      video.style.width = `${width}px`;
-      video.style.height = `${height}px`;
-      video.style.left = canvas.style.left;
-      video.style.top = canvas.style.top;
     }
+    // don't delete cnt here if used later - we delete all at end
+  }
 
-    async function detectFaces() {
-      const predictions = await model.estimateFaces(video, false);
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      predictions.forEach(prediction => {
-        const start = prediction.topLeft;
-        const end = prediction.bottomRight;
-        ctx.strokeStyle = 'lime';
-        ctx.lineWidth = 4;
-        ctx.strokeRect(
-          start[0] * (canvas.width / video.videoWidth),
-          start[1] * (canvas.height / video.videoHeight),
-          (end[0] - start[0]) * (canvas.width / video.videoWidth),
-          (end[1] - start[1]) * (canvas.height / video.videoHeight)
-        );
-      });
-      requestAnimationFrame(detectFaces);
-    }
+  // Free contours that are not used (we already cleaned small ones)
+  // compute area in cm^2 if calibrated
+  if(pixelPerCm){
+    const areaCm2 = totalAreaPx / (pixelPerCm * pixelPerCm);
+    areaInfo.innerText = areaCm2.toFixed(2) + ' cm²';
+  } else {
+    areaInfo.innerText = 'Not calibrated';
+  }
 
-    async function run() {
-      await setupCamera();
-      model = await blazeface.load();
-      detectFaces();
-    }
-
-    window.addEventListener('resize', resizeCanvas);
-
-    run();
-  </script>
+  // cleanup
+  for(let i=0;i<chosenContours.length;i++){
+    chosenContours[i].cnt.delete();
+  }
+  requestAnimationFrame(processFrame);
+}
+</script>
 </body>
 </html>
+
